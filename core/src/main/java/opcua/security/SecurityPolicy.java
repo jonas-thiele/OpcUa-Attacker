@@ -1,5 +1,8 @@
 package opcua.security;
 
+/**
+ * Security Policy (OPC UA Part 7, pp. 91-92)
+ */
 public enum SecurityPolicy {
     NONE("http://opcfoundation.org/UA/SecurityPolicy#None",
             null,
@@ -45,13 +48,21 @@ public enum SecurityPolicy {
             SecurityAlgorithm.AES128_CBC,
             SecurityAlgorithm.HMAC_SHA256,
             SecurityAlgorithm.RSA_OAEP,
-            SecurityAlgorithm.P_SHA256,
+            SecurityAlgorithm.RSA_SHA256,
             SecurityAlgorithm.KW_RSA_OAEP,
             SecurityAlgorithm.P_SHA256,
             32, 32, 16, 16,
-            2048, 4096, 32);
+            2048, 4096, 32),
 
-    //TODO AES256_SHA256_RSAPSS
+    AES256_SHA256_RSAPSS("http://opcfoundation.org/UA/SecurityPolicy#Aes256_Sha256_RsaPss",
+            SecurityAlgorithm.AES256_CBC,
+            SecurityAlgorithm.HMAC_SHA256,
+            SecurityAlgorithm.RSA_OAEP, //TODO OAEP_SHS2_256
+            SecurityAlgorithm.RSA_PSS_SHA256,
+            SecurityAlgorithm.KW_RSA_OAEP, //TODO
+            SecurityAlgorithm.P_SHA256,
+            32, 32, 32, 16,
+            2048, 4096, 32);
 
     private final String uri;
     private final byte[] uriBytes;

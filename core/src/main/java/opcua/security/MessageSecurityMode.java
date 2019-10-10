@@ -1,7 +1,7 @@
 package opcua.security;
 
 /**
- * TODO Part 4 7.15
+ * Message Security Mode (OPC UA Part 4, p.130)
  */
 public enum MessageSecurityMode {
     INVALID,

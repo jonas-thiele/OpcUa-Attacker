@@ -1,15 +1,18 @@
 package opcua.security;
 
-import opcua.util.DataTypeConverter;
+import opcua.encoding.DataTypeConverter;
+import opcua.encoding.EncodingException;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
+/**
+ * Provides utility functions for OAEP
+ */
 public class OAEPUtility {
-
-    public static MessageDigest MGF_HASH;
-    public static int H_LENGTH;
+    private static MessageDigest MGF_HASH;
+    private static int H_LENGTH;
 
     static {
         try {
@@ -20,11 +23,10 @@ public class OAEPUtility {
         }
     }
 
-    /**
-     * Decodes an already decrypted RSA-OAEP block as described in RFC 2437, section 9.1.1.2
-     * This function does not perform any checks against the encoding parameters.
-     */
 
+    /**
+     * Removes leading null byte
+     */
     public static byte[] removeLeadingNullByte(byte[] block) {
         if(block[0] != 0) {
             return block;
@@ -34,7 +36,13 @@ public class OAEPUtility {
         return result;
     }
 
-    public static byte[] decode(byte[] encodedBlock) {
+    /**
+     * Decodes an already decrypted RSA-OAEP block as described in RFC 2437, section 9.1.1.2
+     * This function does not perform any checks against the encoding parameters.
+     * @param encodedBlock Block to decode
+     * @return Decoded block
+     */
+    public static byte[] decode(byte[] encodedBlock) throws EncodingException {
         encodedBlock = removeLeadingNullByte(encodedBlock);
         byte[] maskedSeed = Arrays.copyOfRange(encodedBlock, 0, H_LENGTH);
         byte[] maskedDataBlock = Arrays.copyOfRange(encodedBlock, H_LENGTH, encodedBlock.length);
@@ -51,7 +59,7 @@ public class OAEPUtility {
             secretOffset++;     //Skip through PS
         }
         if(dataBlock[secretOffset] != 1) {
-            throw new Error("TODO");
+            throw new EncodingException("Unable to decode OAEP-encoded message");
         }
         secretOffset++;
 
@@ -83,7 +91,6 @@ public class OAEPUtility {
 
         return mask;
     }
-
 
     private static byte[] xor(byte[] lhs, byte[] rhs) {
         assert(lhs.length == rhs.length);

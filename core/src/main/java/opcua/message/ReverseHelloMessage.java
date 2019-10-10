@@ -1,13 +1,15 @@
 package opcua.message;
 
 import opcua.message.parts.MessageType;
-import opcua.util.BinarySerializer;
-import opcua.util.MessageInputStream;
+import opcua.encoding.BinarySerializer;
+import opcua.encoding.MessageInputStream;
 
 import java.io.IOException;
 
+/**
+ * ReverseHello message of the OPC UA connection protocol (OPC UA Part 6, p.56)
+ */
 public class ReverseHelloMessage extends ConnectionProtocolMessage {
-
     private String serverUri;
     private String endpointUrl;
 
@@ -20,7 +22,6 @@ public class ReverseHelloMessage extends ConnectionProtocolMessage {
     public ReverseHelloMessage() {
         super(MessageType.RHE);
     }
-
 
     @Override
     public byte[] toBinary() {
@@ -36,7 +37,6 @@ public class ReverseHelloMessage extends ConnectionProtocolMessage {
         msg.setEndpointUrl(stream.readString());
         return msg;
     }
-
 
     public String getServerUri() {
         return serverUri;

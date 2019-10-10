@@ -1,19 +1,20 @@
 package opcua.message;
 
 import opcua.message.parts.MessageType;
-import opcua.util.BinarySerializer;
-import opcua.util.MessageInputStream;
+import opcua.encoding.BinarySerializer;
+import opcua.encoding.MessageInputStream;
 
 import java.io.IOException;
 
+/**
+ * Acknowledge message of the OPC UA connection protocol (OPC UA Part 6, p.56)
+ */
 public class AcknowledgeMessage extends ConnectionProtocolMessage {
-
     private long protocolVersion;
     private long receiveBufferSize;
     private long sendBufferSize;
     private long maxMessageSize;
     private long maxChunkCount;
-
 
     public AcknowledgeMessage(long protocolVersion, long receiveBufferSize, long sendBufferSize, long maxMessageSize, long maxChunkCount) {
         super(MessageType.ACK);
@@ -27,9 +28,6 @@ public class AcknowledgeMessage extends ConnectionProtocolMessage {
     public AcknowledgeMessage() {
         super(MessageType.ACK);
     }
-
-    //TODO: From Config
-
 
     @Override
     public byte[] toBinary() {
@@ -51,7 +49,6 @@ public class AcknowledgeMessage extends ConnectionProtocolMessage {
         msg.setMaxChunkCount(stream.readUInt32());
         return msg;
     }
-
 
     public long getProtocolVersion() {
         return protocolVersion;

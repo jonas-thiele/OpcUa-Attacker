@@ -1,20 +1,20 @@
 package opcua.message.parts;
 
-import opcua.util.BinarySerializer;
+import opcua.encoding.BinarySerializer;
 
+/**
+ * Message Header (OPC UA Part 6, p. 47)
+ */
 public abstract class MessageHeader {
-
     private MessageType messageType;
     private IsFinal isFinal;
     private long messageSize;
-
 
     public MessageHeader(MessageType messageType, IsFinal isFinal, long messageSize) {
         this.messageType = messageType;
         this.isFinal = isFinal;
         this.messageSize = messageSize;
     }
-
 
     public byte[] toBinary() {
         return new BinarySerializer()
@@ -23,7 +23,6 @@ public abstract class MessageHeader {
                 .putUInt32(messageSize)
                 .get();
     }
-
 
     public MessageType getMessageType() {
         return messageType;

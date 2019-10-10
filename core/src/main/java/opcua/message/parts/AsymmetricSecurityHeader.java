@@ -1,21 +1,23 @@
 package opcua.message.parts;
 
-import opcua.security.CertificateUtil;
+import opcua.encoding.EncodingException;
+import opcua.security.CertificateUtility;
 import opcua.security.SecurityPolicy;
-import opcua.util.BinarySerializer;
-import opcua.util.MessageInputStream;
+import opcua.encoding.BinarySerializer;
+import opcua.encoding.MessageInputStream;
 
 import java.io.IOException;
 import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 
-public class AsymmetricSecurityHeader {
-
+/**
+ * Asymmetric Security Header (OPC UA Part 6, p. 48)
+ */
+public class AsymmetricSecurityHeader implements SecurityHeader {
     private SecurityPolicy securityPolicy;
     private X509Certificate senderCertificate;
     private byte[] receiverCertificateThumbprint;
-
 
     public AsymmetricSecurityHeader(SecurityPolicy securityPolicy, X509Certificate senderCertificate, byte[] receiverCertificateThumbprint) {
         this.securityPolicy = securityPolicy;
@@ -25,9 +27,14 @@ public class AsymmetricSecurityHeader {
 
     public AsymmetricSecurityHeader() { }
 
+    public byte[] toBinary() throws EncodingException {
+        byte[] derEncodedCertificate = new byte[0];
+        try {
+            derEncodedCertificate = senderCertificate != null ? senderCertificate.getEncoded() : null;
+        } catch (CertificateEncodingException e) {
+            throw new EncodingException("Unable to encode AsymmetricSecurityHeader", e);
+        }
 
-    public byte[] toBinary() throws CertificateEncodingException {
-        byte[] derEncodedCertificate = senderCertificate != null ? senderCertificate.getEncoded() : null;
         return new BinarySerializer()
                 .putByteArray(securityPolicy.getUriBytes())
                 .putByteArray(derEncodedCertificate)
@@ -37,8 +44,11 @@ public class AsymmetricSecurityHeader {
 
     public static AsymmetricSecurityHeader constructFromBinary(MessageInputStream stream) throws IOException, CertificateException {
         AsymmetricSecurityHeader securityHeader = new AsymmetricSecurityHeader();
-        securityHeader.setSecurityPolicy(SecurityPolicy.valueOf(new String(stream.readByteArray())));
-        securityHeader.setSenderCertificate(CertificateUtil.decodeX509FromDer(stream.readString().getBytes()));
+        securityHeader.setSecurityPolicy(SecurityPolicy.fromUri(new String(stream.readByteArray())));
+        byte[] encodedCertificate = stream.readByteArray();
+        if(encodedCertificate != null) {
+            securityHeader.setSenderCertificate(CertificateUtility.decodeX509FromDer(stream.readByteArray()));
+        }
         securityHeader.setReceiverCertificateThumbprint(stream.readByteArray());
         return securityHeader;
     }

@@ -1,24 +1,23 @@
 package attacks.manger.oracle;
 
 
-import javax.crypto.BadPaddingException;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.NoSuchPaddingException;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 
 /**
  * Abstraction for a PKCS#1 padding oracle.
  */
-
 public abstract class Oracle {
-
     private long queryCount;
+    private VictimProxy victimProxy;
 
-    public abstract boolean checkValidity(byte[] message) throws OracleException;
+    /**
+     * Queries the oracle
+     * @param cipherBlock The cipher block to query
+     * @return Whether cipherBlock is valid
+     * @throws OracleException
+     */
+    public abstract boolean checkValidity(byte[] cipherBlock) throws OracleException;
 
-
-    protected void incrementQueryCount() {
+    void incrementQueryCount() {
         queryCount++;
     }
 
@@ -26,4 +25,14 @@ public abstract class Oracle {
         return queryCount;
     }
 
+    public VictimProxy getVictimProxy() throws OracleException {
+        if(victimProxy == null) {
+            throw new OracleException("No victim proxy was set to query");
+        }
+        return victimProxy;
+    }
+
+    public void setVictimProxy(VictimProxy victimProxy) {
+        this.victimProxy = victimProxy;
+    }
 }

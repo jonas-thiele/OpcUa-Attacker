@@ -1,5 +1,8 @@
 package opcua.security;
 
+/**
+ * Security algorithms that are used in the OPC UA specification
+ */
 public enum SecurityAlgorithm {
     AES128_CBC("http://www.w3.org/2001/04/xmlenc#aes128-cbc", AlgorithmType.SYMMETRIC_ENCRYPTION, 128),
     AES256_CBC("http://www.w3.org/2001/04/xmlenc#aes256-cbc", AlgorithmType.SYMMETRIC_ENCRYPTION, 256),

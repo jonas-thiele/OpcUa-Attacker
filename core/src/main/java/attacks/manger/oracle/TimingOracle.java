@@ -1,34 +1,35 @@
 package attacks.manger.oracle;
 
-import attacks.CipherTextHelper;
-import opcua.context.Context;
+import attacks.manger.oracle.timing.DecisionRule;
 
-import java.io.IOException;
-import java.security.interfaces.RSAPublicKey;
-
+/**
+ * Oracle for the exploitation of timing differences
+ */
 public class TimingOracle extends Oracle {
+    private final DecisionRule decisionRule;
 
-    private Context context;
-    private final long threshold;
-    private final boolean lessThanBTakesLonger;
-    private byte[] validCipherText;
-    private int blockNumber;
-    private int blockOffset;
-    private int cipherBlockSize;
-
-    public TimingOracle(Context context, long threshold, boolean lessThanBTakesLonger, byte[] validCipherText, int blockNumber) throws IOException {
-        this.context = context;
-        this.threshold = threshold;
-        this.lessThanBTakesLonger = lessThanBTakesLonger;
-        this.validCipherText = validCipherText;
-        RSAPublicKey publicKey = (RSAPublicKey) context.getRemoteCertificate().getPublicKey();
-        this.blockNumber = blockNumber;
-        this.blockOffset = CipherTextHelper.getOpnBlockOffset(validCipherText, publicKey);
-        this.cipherBlockSize = publicKey.getModulus().bitLength() / 8;
+    /**
+     * Constructor
+     * @param decisionRule Decision rule
+     * @throws OracleException
+     */
+    public TimingOracle(DecisionRule decisionRule) throws OracleException {
+        this.decisionRule = decisionRule;
     }
 
     @Override
     public boolean checkValidity(byte[] message) throws OracleException {
-        return false;
+        incrementQueryCount();
+        return decisionRule.predict(message);
+    }
+
+    @Override
+    public VictimProxy getVictimProxy() throws OracleException {
+        return decisionRule.getVictimProxy();
+    }
+
+    @Override
+    public void setVictimProxy(VictimProxy victimProxy) {
+        decisionRule.setVictimProxy(victimProxy);
     }
 }

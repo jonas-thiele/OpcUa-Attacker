@@ -1,27 +1,24 @@
 package opcua.message;
 
+import opcua.context.StaticConfig;
+import opcua.encoding.EncodingException;
 import opcua.message.parts.MessageType;
-import opcua.util.BinarySerializer;
-import opcua.util.MessageInputStream;
+import opcua.encoding.BinarySerializer;
+import opcua.encoding.MessageInputStream;
 
 import java.io.IOException;
 
 /**
- * Message sent by client to initiate channel establishment.
- *
- * As specified in OPC UA Specification 7.1.2.3
+ * Hello message of the OPC UA connection protocol (OPC UA Part 6, p.55)
  */
 
 public class HelloMessage extends ConnectionProtocolMessage {
-
     private long protocolVersion;
     private long receiveBufferSize;
     private long sendBufferSize;
     private long maxMessageSize;
     private long maxChunkCount;
     private String endpointUrl;
-
-
 
     public HelloMessage(long protocolVersion, long receiveBufferSize, long sendBufferSize, long maxMessageSize, long maxChunkCount, String endpointUrl) {
         super(MessageType.HEL);
@@ -37,8 +34,16 @@ public class HelloMessage extends ConnectionProtocolMessage {
         super(MessageType.HEL);
     }
 
-    //TODO: Create from Config
-
+    public static HelloMessage fromConfig(String endpointUrl) {
+        return new HelloMessage(
+                StaticConfig.PROTOCOL_VERSION,
+                StaticConfig.RECEIVE_BUFFER_SIZE,
+                StaticConfig.SEND_BUFFER_SIZE,
+                StaticConfig.MAX_MESSAGE_SIZE,
+                StaticConfig.MAX_CHUNK_COUNT,
+                endpointUrl
+        );
+    }
 
     @Override
     public byte[] toBinary() {
@@ -52,15 +57,19 @@ public class HelloMessage extends ConnectionProtocolMessage {
                 .get();
     }
 
-    public static HelloMessage constructFromBinary(MessageInputStream stream) throws IOException {
-        HelloMessage msg = new HelloMessage();
-        msg.setProtocolVersion(stream.readUInt32());
-        msg.setReceiveBufferSize(stream.readUInt32());
-        msg.setSendBufferSize(stream.readUInt32());
-        msg.setMaxMessageSize(stream.readUInt32());
-        msg.setMaxChunkCount(stream.readUInt32());
-        msg.setEndpointUrl(stream.readString());
-        return msg;
+    public static HelloMessage constructFromBinary(MessageInputStream stream) throws EncodingException {
+        try {
+            HelloMessage msg = new HelloMessage();
+            msg.setProtocolVersion(stream.readUInt32());
+            msg.setReceiveBufferSize(stream.readUInt32());
+            msg.setSendBufferSize(stream.readUInt32());
+            msg.setMaxMessageSize(stream.readUInt32());
+            msg.setMaxChunkCount(stream.readUInt32());
+            msg.setEndpointUrl(stream.readString());
+            return msg;
+        } catch (IOException e) {
+            throw new EncodingException(e);
+        }
     }
 
 

@@ -1,15 +1,17 @@
 package opcua.message;
 
 import opcua.message.parts.MessageType;
-import opcua.util.BinarySerializer;
-import opcua.util.MessageInputStream;
+import opcua.encoding.BinarySerializer;
+import opcua.encoding.MessageInputStream;
 
 import java.io.IOException;
 
+/**
+ * Error message of the OPC UA connection protocol (OPC UA Part 6, p.56)
+ */
 public class ErrorMessage extends ConnectionProtocolMessage {
-
-    long error;
-    String reason;
+    private long error;
+    private String reason;
 
     public ErrorMessage(long error, String reason) {
         super(MessageType.ERR);
@@ -20,7 +22,6 @@ public class ErrorMessage extends ConnectionProtocolMessage {
     public ErrorMessage() {
         super(MessageType.ERR);
     }
-
 
     @Override
     public byte[] toBinary() {

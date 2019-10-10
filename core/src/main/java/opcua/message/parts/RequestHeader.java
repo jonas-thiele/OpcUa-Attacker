@@ -1,11 +1,13 @@
 package opcua.message.parts;
 
 import opcua.model.type.NodeId;
-import opcua.util.BinarySerializer;
+import opcua.encoding.BinarySerializer;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 
+/**
+ * Request Header (OPC UA Part 4, p. 146)
+ */
 public class RequestHeader {
 
     private NodeId authenticationToken;
@@ -30,7 +32,7 @@ public class RequestHeader {
 
 
     public byte[] toBinary() {
-        byte[] b = new BinarySerializer()
+        return new BinarySerializer()
                 .putNodeId(authenticationToken)
                 .putDateTime(timestamp)
                 .putUInt32(requestHandle)
@@ -41,7 +43,6 @@ public class RequestHeader {
                 .putNodeId(NodeId.NUMERIC_NULL)
                 .putByte((byte)0x0)
                 .get();
-        return b;
     }
 
 

@@ -1,19 +1,15 @@
 package opcua.message.parts;
 
-import opcua.message.Message;
 
+/**
+ * Message Type for message header (OPC UA Part 6, p. 47, p. 55)
+ */
 public enum MessageType {
 
-    /**
-     * TODO: OPC UA 6.7.2.2 Secure Conversation  MessageType
-     */
     MSG(false),    // normal Message
     OPN(false),    // OpenSecureChannel
     CLO(false),    // CloseSecureChannel
 
-    /**
-     * TODO: OPC UA 7.1.2.1 Connection Protocol MessageType
-     */
     HEL(true),    // Hello
     ACK(true),    // Acknowledge
     ERR(true),    // Error
@@ -40,4 +36,6 @@ public enum MessageType {
     public boolean isConnectionProtocolMessage() {
         return isConnectionProtocolMessage;
     }
+
+    public boolean isError() { return this == MessageType.ERR; }
 }
